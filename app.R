@@ -128,7 +128,7 @@ ui <- fluidPage(
        <i class='fa fa-globe'></i>
        Personal Website
     </a>
-    <a href='https://github.com/elliedegb/assumpt'
+    <a href='https://github.com/elliedegb/ScaleCheck'
        target='_blank'
        style='text-decoration:none; color:#2C3E50;'>
        <i class='fa fa-github'></i>
