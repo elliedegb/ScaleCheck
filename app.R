@@ -41,7 +41,23 @@ ui <- fluidPage(
       href = "https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css"
     )
   ),
-  
+  ,
+  tags$head(
+    tags$title("ScaleCheck")
+  ),
+  titlePanel(
+    div(
+      style = "
+      text-align:center;
+      font-family:'Jaro', serif;
+      font-size:40px;
+      font-weight:bold;
+      color:#2C3E50;
+      margin-bottom:10px;
+    ",
+      
+      "ScaleCheck: Psychometric Assumption Diagnostics for Reflective Measurement"
+    ),
   tags$head(
     tags$style(HTML("
   
@@ -74,21 +90,6 @@ ui <- fluidPage(
   }
 
   "))
-  ),
-  
-  titlePanel(
-    div(
-      style = "
-      text-align:center;
-      font-family:'Jaro', serif;
-      font-size:40px;
-      font-weight:bold;
-      color:#2C3E50;
-      margin-bottom:10px;
-    ",
-      
-      "Psychometric Assumption Diagnostics for Reflective Measurement"
-    )
   ),
   
   tags$hr(),
