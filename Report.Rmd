@@ -1,0 +1,1280 @@
+---
+title: "Psychometric Assumption Diagnostics Report"
+author: "Ellie Bastos Degobi"
+date: "`r Sys.Date()`"
+
+params:
+  data: NULL
+
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+    latex_engine: xelatex
+
+header-includes:
+  - \usepackage{fontspec}
+---
+
+```{r setup, include=FALSE}
+options(warn = -1)
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  error = FALSE
+)
+
+library(psych)
+library(EGAnet)
+library(EFA.MRFA)
+library(lavaan)
+library(eRm)
+library(mokken)
+library(corrplot)
+```
+
+# Overview
+
+This report presents an integrated psychometric evaluation of the selected instrument using classical test theory, factor analytic procedures, network psychometrics, and item response theory approaches.
+
+The analyses evaluate:
+
+- Descriptive item properties
+- Correlation structure
+- Reliability
+- Dimensionality
+- Confirmatory factor structure
+- Rasch-family item response models
+- Monotonicity
+- Local independence
+
+All results should be interpreted jointly rather than in isolation.
+
+
+# Descriptive Statistics
+
+The following table summarizes the central tendency, variability, distribution shape, and missingness patterns of the selected variables.
+
+```{r descriptives}
+
+dat <- params$data
+
+cat("Number of respondents:", nrow(dat), "\n")
+cat("Number of items:", ncol(dat), "\n")
+
+desc <- psych::describe(dat)
+
+knitr::kable(desc, digits = 2)
+```
+
+# Correlation Structure
+
+A Spearman correlation matrix was estimated to evaluate the strength and direction of associations among variables.
+
+The graphical representation below displays:
+
+- Positive correlations in blue
+- Negative correlations in red
+- Larger symbols indicating stronger associations
+- Non-significant correlations suppressed when applicable
+
+```{r correlation}
+# -----------------------------------------
+# Keep only numeric variables
+# -----------------------------------------
+
+cor_dat <- dat[, sapply(dat, is.numeric), drop = FALSE]
+
+# -----------------------------------------
+# Detect response structure
+# -----------------------------------------
+
+is_binary <- all(
+  sapply(cor_dat, function(x) {
+    length(unique(na.omit(x))) == 2
+  })
+)
+
+is_polytomous <- all(
+  sapply(cor_dat, function(x) {
+
+    ncat <- length(unique(na.omit(x)))
+
+    ncat > 2
+  })
+)
+
+# -----------------------------------------
+# Choose correlation method
+# -----------------------------------------
+
+cor_method <- if (is_binary) {
+
+  "kendall"
+
+} else {
+
+  "spearman"
+}
+
+cat("Correlation method used:", cor_method, "\n\n")
+
+# -----------------------------------------
+# Safe correlation estimation
+# -----------------------------------------
+
+cor_results <- tryCatch({
+
+  psych::corr.test(
+    cor_dat,
+    method = cor_method,
+    use = "pairwise"
+  )
+
+}, error = function(e) NULL)
+
+# -----------------------------------------
+# Plot
+# -----------------------------------------
+
+if (!is.null(cor_results)) {
+
+  corrplot::corrplot(
+    cor_results$r,
+    method = "pie",
+    type = "upper",
+    diag = FALSE,
+    p.mat = cor_results$p,
+    tl.col = "black",
+    addCoef.col = "black",
+    tl.srt = 45
+  )
+
+} else {
+
+  cat("Correlation matrix could not be estimated.")
+}
+```
+
+# Reliability
+
+- Cronbach's Alpha estimates internal consistency assuming tau-equivalence.
+- McDonald's Omega estimates the proportion of variance attributable to the common latent factor and is typically more robust under heterogeneous loadings.
+- The Greatest Lower Bound (GLB) provides a lower-bound estimate of reliability and may exceed alpha when item loadings differ substantially.
+
+As a general heuristic:
+
+- ≥ .90 → Excellent
+- ≥ .80 → Good
+- ≥ .70 → Acceptable
+- ≥ .60 → Questionable
+- < .60 → Poor
+
+These thresholds are guidelines rather than absolute decision rules.
+
+```{r reliability, fig.keep='none', results='asis'}
+
+# =====================================================
+# RELIABILITY ANALYSIS
+# =====================================================
+omega_obj <- suppressMessages(
+  suppressWarnings(
+    psych::omega(
+      dat,
+      plot = FALSE,
+      warnings = FALSE
+    )
+  )
+)
+
+# -----------------------------------------
+# Extract scalar values safely
+# -----------------------------------------
+
+alpha <- tryCatch(
+  as.numeric(omega_obj$alpha[1]),
+  error = function(e) NA
+)
+
+omega_total <- tryCatch(
+  as.numeric(omega_obj$omega.tot[1]),
+  error = function(e) NA
+)
+
+glb <- tryCatch({
+
+  glb_obj <- psych::glb(dat)
+
+  if ("glb.fa" %in% names(glb_obj)) {
+
+    as.numeric(glb_obj$glb.fa[1])
+
+  } else if ("glb" %in% names(glb_obj)) {
+
+    as.numeric(glb_obj$glb[1])
+
+  } else {
+
+    NA
+  }
+
+}, error = function(e) NA)
+
+# -----------------------------------------
+# Interpretation helper
+# -----------------------------------------
+
+interpret_reliability <- function(x) {
+
+  x <- as.numeric(x)[1]
+
+  if (is.na(x)) {
+
+    "Not estimated"
+
+  } else if (x >= .90) {
+
+    "Excellent"
+
+  } else if (x >= .80) {
+
+    "Good"
+
+  } else if (x >= .70) {
+
+    "Acceptable"
+
+  } else if (x >= .60) {
+
+    "Questionable"
+
+  } else {
+
+    "Poor"
+  }
+}
+
+# -----------------------------------------
+# Results table
+# -----------------------------------------
+
+reliability_table <- data.frame(
+
+  Reliability_Index = c(
+    "Cronbach's Alpha",
+    "McDonald's Omega",
+    "Greatest Lower Bound (GLB)"
+  ),
+
+  Estimate = c(
+    alpha,
+    omega_total,
+    glb
+  ),
+
+  Interpretation = c(
+    interpret_reliability(alpha),
+    interpret_reliability(omega_total),
+    interpret_reliability(glb)
+  )
+)
+
+# -----------------------------------------
+# Print table
+# -----------------------------------------
+
+knitr::kable(
+  reliability_table,
+  digits = 3,
+  caption = "Reliability Indices"
+)
+
+cat("
+
+Interpretation
+
+Cronbach's Alpha estimates internal consistency under the assumption of tau-equivalence.
+
+McDonald's Omega estimates the proportion of variance attributable to the common latent factor and is generally more robust when item loadings differ.
+
+The Greatest Lower Bound (GLB) provides a lower-bound estimate of reliability and may exceed alpha under heterogeneous item structures.
+
+")
+```
+
+# Dimensionality
+
+## Parallel Analysis
+
+Parallel analysis compares observed eigenvalues against simulated random datasets to estimate the number of latent dimensions that should be retained.
+
+Factors are typically retained when observed eigenvalues exceed those generated under random structure.
+
+```{r parallel analysis}
+
+cat("## Parallel Analysis\n\n")
+
+# -----------------------------------------
+# Prepare data
+# -----------------------------------------
+
+pa_dat <- dat[, sapply(dat, is.numeric), drop = FALSE]
+
+# Remove rows with all NA
+pa_dat <- pa_dat[rowSums(!is.na(pa_dat)) > 0, ]
+
+# -----------------------------------------
+# Detect ordinal structure
+# -----------------------------------------
+
+is_ordinal <- all(
+  sapply(pa_dat, function(x) {
+
+    ncat <- length(unique(na.omit(x)))
+
+    ncat <= 7
+  })
+)
+
+# -----------------------------------------
+# Choose correlation type
+# -----------------------------------------
+
+corr_type <- if (is_ordinal) {
+  "Polychoric"
+} else {
+  "Pearson"
+}
+
+cat("Correlation type used:", corr_type, "\n\n")
+
+# -----------------------------------------
+# Run analysis safely
+# -----------------------------------------
+
+tryCatch({
+
+  pa_result <- EFA.MRFA::parallelMRFA(
+    as.matrix(pa_dat),
+    Ndatsets = 200,
+    percent = 95,
+    corr = corr_type,
+    display = TRUE,
+    graph = FALSE
+  )
+
+  print(pa_result)
+
+  cat("\n\nInterpretation\n\n")
+
+  cat(
+    "Parallel Analysis compares empirical eigenvalues against simulated random-data eigenvalues.\n",
+    "Factors are retained when empirical eigenvalues exceed simulated values.\n\n"
+  )
+
+  # -----------------------------------------
+  # Plot separately
+  # -----------------------------------------
+
+  try({
+
+    EFA.MRFA::parallelMRFA(
+      as.matrix(pa_dat),
+      Ndatsets = 200,
+      percent = 95,
+      corr = corr_type,
+      display = FALSE,
+      graph = TRUE
+    )
+
+  }, silent = TRUE)
+
+}, error = function(e) {
+
+  cat("Parallel analysis could not be estimated.\n\n")
+
+  cat("Reason:\n")
+  cat(e$message)
+
+})
+```
+
+## Exploratory Graph Analysis (EGA)
+
+EGA estimates dimensionality using network psychometrics by identifying clusters of strongly connected variables.
+
+Distinct item communities may indicate separate latent dimensions.
+
+```{r EGA}
+
+ega_result <- tryCatch({
+
+  EGAnet::EGA(dat,  plot.EGA = FALSE)
+
+}, error = function(e) NULL)
+
+if (!is.null(ega_result)) {
+
+  print(ega_result)
+
+  tryCatch({
+
+    plot(ega_result)
+
+  }, error = function(e) {
+
+    cat("EGA plot could not be generated.\n")
+
+  })
+
+} else {
+
+  cat("EGA estimation failed.")
+
+}
+```
+
+## Hull Method
+
+The Hull Method is a dimensionality assessment procedure that identifies the optimal balance between model fit and model parsimony. Rather than selecting the solution with the highest fit alone, the method evaluates whether improvements in fit justify the increase in model complexity.
+
+In practice, the Hull Method attempts to determine the smallest number of latent dimensions capable of adequately reproducing the covariance structure of the observed data.
+
+Interpretation guidelines:
+
+- A one-factor solution suggests a predominantly unidimensional structure
+- Multiple retained factors suggest multidimensionality
+- Very large factor solutions may indicate overfitting or item redundancy
+
+The Hull Method should be interpreted jointly with Parallel Analysis, Exploratory Graph Analysis (EGA), and Confirmatory Factor Analysis (CFA).
+
+```{r hull}
+hull <- EFA.MRFA::hullEFA(
+  na.omit(dat),
+  graph = TRUE,
+  display = TRUE
+)
+```
+
+## Confirmatory Factor Analysis (CFA)
+
+A unidimensional CFA model was estimated using the ULSMV estimator, which is appropriate for ordinal variables.
+
+Key fit indices include:
+
+- CFI/TLI ≥ .95 → good fit
+- RMSEA ≤ .06 → good fit
+- SRMR ≤ .08 → good fit
+
+These values should be interpreted jointly rather than individually.
+
+```{r cfa, results='asis'}
+model_syntax <- paste0(
+  "F1 =~ ",
+  paste(colnames(dat), collapse = " + ")
+)
+
+fit <- lavaan::cfa(
+  model = model_syntax,
+  data = dat,
+  ordered = colnames(dat),
+  estimator = "ULSMV"
+)
+
+# =====================================================
+# Extract fit indices
+# =====================================================
+
+fit_indices <- lavaan::fitMeasures(
+  fit,
+  c(
+    "cfi.scaled",
+    "tli.scaled",
+    "rmsea.scaled",
+    "srmr",
+    "chisq.scaled",
+    "df.scaled",
+    "pvalue.scaled"
+  )
+)
+
+fit_table <- data.frame(
+
+  Index = c(
+    "CFI",
+    "TLI",
+    "RMSEA",
+    "SRMR",
+    "Chi-Square",
+    "Degrees of Freedom",
+    "p-value"
+  ),
+
+  Value = round(
+    as.numeric(fit_indices),
+    3
+  )
+)
+
+# =====================================================
+# Print table
+# =====================================================
+
+print(
+
+  knitr::kable(
+    fit_table,
+    digits = 3,
+    caption = "Fit Indices",
+    booktabs = TRUE
+  )
+)
+
+cat("\n\n")
+
+# =====================================================
+# Heuristic interpretation
+# =====================================================
+
+cfi_val <- fit_indices["cfi.scaled"]
+tli_val <- fit_indices["tli.scaled"]
+rmsea_val <- fit_indices["rmsea.scaled"]
+srmr_val <- fit_indices["srmr"]
+
+cat("## Interpretation of Model Fit\n\n")
+
+# -----------------------------------------
+# CFI
+# -----------------------------------------
+
+if (!is.na(cfi_val)) {
+
+  if (cfi_val >= .95) {
+
+    cat("- CFI indicates excellent comparative model fit.\n")
+
+  } else if (cfi_val >= .90) {
+
+    cat("- CFI indicates acceptable comparative model fit.\n")
+
+  } else {
+
+    cat("- CFI suggests inadequate comparative model fit.\n")
+  }
+}
+
+# -----------------------------------------
+# TLI
+# -----------------------------------------
+
+if (!is.na(tli_val)) {
+
+  if (tli_val >= .95) {
+
+    cat("- TLI indicates excellent incremental model fit.\n")
+
+  } else if (tli_val >= .90) {
+
+    cat("- TLI indicates acceptable incremental model fit.\n")
+
+  } else {
+
+    cat("- TLI suggests inadequate incremental model fit.\n")
+  }
+}
+
+# -----------------------------------------
+# RMSEA
+# -----------------------------------------
+
+if (!is.na(rmsea_val)) {
+
+  if (rmsea_val <= .06) {
+
+    cat("- RMSEA indicates close approximate fit.\n")
+
+  } else if (rmsea_val <= .08) {
+
+    cat("- RMSEA indicates reasonable approximate fit.\n")
+
+  } else {
+
+    cat("- RMSEA suggests substantial model misfit.\n")
+  }
+}
+
+# -----------------------------------------
+# SRMR
+# -----------------------------------------
+
+if (!is.na(srmr_val)) {
+
+  if (srmr_val <= .08) {
+
+    cat("- SRMR indicates good residual fit.\n")
+
+  } else {
+
+    cat("- SRMR suggests elevated residual discrepancies.\n")
+  }
+}
+
+cat("\n")
+
+cat("
+CFA fit indices should always be interpreted jointly rather than individually.
+
+Adequate model fit does not guarantee validity, unidimensionality, or invariance, but suggests that the proposed latent structure reproduces the observed covariance matrix reasonably well.
+
+Potential causes of poor fit include multidimensionality, local dependence, item redundancy, poorly functioning indicators, sparse response categories, or model misspecification.
+
+")
+```
+
+## Item Response Theory (IRT)
+
+A Rasch-family model was estimated depending on the response structure:
+
+- Rasch Model (RM) for dichotomous data
+- Rating Scale Model (RSM) for ordinal data
+
+These models estimate both item difficulty and respondent latent trait levels on a common metric.
+
+```{r irt}
+is_binary <- all(
+  sapply(dat, function(x) {
+    length(unique(na.omit(x))) == 2
+  })
+)
+
+is_polytomous <- all(
+  sapply(dat, function(x) {
+
+    ncat <- length(unique(na.omit(x)))
+
+    ncat > 2 && ncat <= 7
+  })
+)
+
+irt_model <- NULL
+
+if (is_binary) {
+
+  irt_model <- eRm::RM(dat)
+
+} else if (is_polytomous) {
+
+  irt_model <- eRm::RSM(dat)
+}
+
+print(irt_model)
+```
+
+### Item Fit Analysis
+
+Item fit statistics evaluate how well each item conforms to the expectations of the Rasch model.
+
+These indices compare the observed response patterns to the patterns predicted by the latent trait model. Items with good fit behave consistently with the assumed measurement structure, while misfitting items may introduce noise, multidimensionality, or local dependence.
+
+This report presents Infit and Outfit Mean Square (MSQ) statistics.
+
+Interpretation guidelines:
+
+- Values close to 1.0 indicate good fit
+- Values between 0.7 and 1.3 are often considered acceptable for applied research
+- High values (> 1.3) indicate underfit, suggesting unpredictable or noisy item behavior
+- Low values (< 0.7) indicate overfit, suggesting redundancy or overly deterministic responses
+
+Differences between Infit and Outfit:
+
+- Infit is more sensitive to unexpected responses near the respondent’s latent trait level
+- Outfit is more sensitive to outliers and unexpected extreme responses
+
+Potential causes of item misfit include:
+
+- Multidimensionality
+- Local dependence
+- Ambiguous wording
+- Differential item functioning
+- Sparse response categories
+
+Item fit should be interpreted alongside ICCs, monotonicity analyses, dimensionality evidence, and substantive item content review.
+
+```{r item fit, results='asis'}
+cat("
+Item fit statistics evaluate how well each item conforms to Rasch model expectations.
+
+The indices compare observed response patterns to those predicted by the latent trait model.
+
+Items with good fit behave consistently with the assumed measurement structure, while misfitting items may indicate noise, multidimensionality, local dependence, or poorly functioning response categories.
+
+\n\n")
+
+if (!is.null(irt_model)) {
+
+  tryCatch({
+
+    ppar <- eRm::person.parameter(irt_model)
+
+    item_fit <- eRm::itemfit(ppar)
+
+    # -----------------------------------------
+    # Extract safely
+    # -----------------------------------------
+
+    infit <- as.numeric(item_fit$i.infitMSQ)
+    outfit <- as.numeric(item_fit$i.outfitMSQ)
+
+    infit_t <- as.numeric(item_fit$i.infitZ)
+    outfit_t <- as.numeric(item_fit$i.outfitZ)
+
+    fit_table <- data.frame(
+
+      Item = rownames(as.matrix(item_fit$i.infitMSQ)),
+
+      Infit_MSQ = round(infit, 3),
+
+      Outfit_MSQ = round(outfit, 3),
+
+      Infit_t = round(infit_t, 3),
+
+      Outfit_t = round(outfit_t, 3)
+    )
+
+    # -----------------------------------------
+    # Add interpretation
+    # -----------------------------------------
+
+    fit_table$Interpretation <- ifelse(
+
+      fit_table$Infit_MSQ >= 0.7 &
+      fit_table$Infit_MSQ <= 1.3 &
+      fit_table$Outfit_MSQ >= 0.7 &
+      fit_table$Outfit_MSQ <= 1.3,
+
+      "Acceptable fit",
+
+      "Potential misfit"
+    )
+
+    # -----------------------------------------
+    # Print table properly
+    # -----------------------------------------
+
+    print(
+
+      knitr::kable(
+        fit_table,
+        digits = 3,
+        booktabs = TRUE,
+        longtable = TRUE,
+        caption = "Item Fit Diagnostics"
+      )
+
+    )
+
+    cat("\n\n")
+  }, error = function(e) {
+
+    cat("Item fit statistics could not be estimated.\n\n")
+
+    cat("Reason:\n\n")
+
+    cat(e$message)
+
+  })
+}
+```
+# Latent Monotonicity Analysis
+## Mokken's Monotonicity Analysis
+
+Monotonicity evaluates whether the probability of endorsing an item increases consistently as the latent trait increases.
+
+This assumption is fundamental to nonparametric Item Response Theory models, including Mokken scaling procedures.
+
+The analysis evaluates scalability coefficients (ItemH) and searches for statistically significant violations of monotonicity.
+
+Interpretation guidelines:
+
+- Higher ItemH values indicate stronger cumulative ordering of items
+- Values above .50 generally indicate strong scalability
+- Values between .30 and .50 indicate moderate scalability
+- Values below .30 suggest weak scalability
+- Significant violations may indicate multidimensionality, local dependence, or poorly functioning items
+
+Monotonicity supports the interpretation of items as reflecting a common latent construct.
+
+The following table presents the items, the scalability indices for each item (ItemH ), the number of active pairs (ac)—which represents the maximum possible number of tests of monotonicity for each item—, the number of monotonicity violations (Vi) that were identified for each item, the magnitude of the largest violation (MaxVi), the z value of this largest violation (Zmax) for inferential testing, and the number of violations which were significant in each item (Zsig).
+
+```{r monotonicity_table, results='asis'}
+
+library(knitr)
+
+mono <- mokken::check.monotonicity(
+  na.omit(dat)
+)
+
+mono_sum <- summary(mono)
+
+# =====================================================
+# Convert to clean table
+# =====================================================
+
+mono_df <- as.data.frame(mono_sum)
+
+# =====================================================
+# Add interpretation columns
+# =====================================================
+
+mono_df$Scalability <- ifelse(
+  mono_df$ItemH >= 0.50, "Strong",
+  ifelse(mono_df$ItemH >= 0.30, "Moderate", "Weak")
+)
+
+mono_df$Violation_Level <- ifelse(
+  mono_df$`#zsig` == 0, "No violations",
+  ifelse(mono_df$`#zsig` <= 3, "Low violations", "High violations")
+)
+
+# =====================================================
+# Round numeric columns safely
+# =====================================================
+
+num_cols <- sapply(mono_df, is.numeric)
+
+mono_df[num_cols] <- lapply(mono_df[num_cols], round, 3)
+
+# =====================================================
+# Pretty table output
+# =====================================================
+
+knitr::kable(
+  mono_df,
+  digits = 3,
+  caption = "Mokken Monotonicity Diagnostics by Item",
+  booktabs = TRUE,
+  align = "c"
+)
+
+cat("\n\n")
+
+# =====================================================
+# Global interpretation
+# =====================================================
+
+avg_h <- mean(mono_df$ItemH, na.rm = TRUE)
+total_viol <- sum(mono_df$`#zsig`, na.rm = TRUE)
+
+cat("### Interpretation\n\n")
+
+cat(sprintf(
+"
+- The average scalability coefficient (ItemH) is **%.3f**, indicating overall item scalability strength.
+
+- Total flagged violations: **%d**
+
+#### Interpretation of structure:
+",
+avg_h,
+total_viol
+))
+
+if (avg_h >= 0.50) {
+  cat("- The item set shows **strong cumulative scalability**, consistent with a unidimensional latent trait.\n")
+} else if (avg_h >= 0.30) {
+  cat("- The item set shows **moderate scalability**, suggesting a mostly coherent but not fully stable structure.\n")
+} else {
+  cat("- The item set shows **weak scalability**, indicating potential multidimensionality or poorly functioning items.\n")
+}
+
+cat("
+### What this means:
+
+- Items with high ItemH contribute strongly to a cumulative scale.
+- Items with low ItemH may not align well with the latent trait.
+- Significant violations (#zsig) suggest potential local dependence or irregular response patterns.
+
+This table should be interpreted alongside CFA, EGA, and IRT results for a complete psychometric evaluation.
+")
+```
+
+## Item Characteristic Curves (ICC)
+
+Item Characteristic Curves visualize the relationship between the latent trait and the probability of endorsing an item category.
+
+For dichotomous items, ICCs show how the probability of endorsing the item increases as the latent trait increases.
+
+For polytomous items, ICCs display category response curves representing the probability of selecting each response category across the latent trait continuum.
+
+Interpretation guidelines:
+
+- Smooth increasing curves support monotonicity
+- Ordered category transitions indicate appropriate category functioning
+- Flat or irregular curves may indicate poor discrimination, sparse categories, or multidimensionality
+- Strong overlap between categories may suggest redundant response options
+
+These plots provide a visual diagnostic of item functioning under Rasch-family models.
+
+```{r icc, fig.width=10, fig.height=8, out.width='100%', fig.align='center'}
+
+if (!is.null(irt_model)) {
+
+  tryCatch({
+
+    # =====================================================
+    # Dichotomous ICC
+    # =====================================================
+
+    if (is_binary) {
+
+      par(
+        mar = c(4, 4, 2, 1),
+        cex.main = 1,
+        cex.axis = 0.9,
+        cex.lab = 1
+      )
+
+      eRm::plotjointICC(
+        irt_model
+      )
+
+    } else {
+
+      # =====================================================
+      # Polytomous ICC
+      # =====================================================
+
+      n_items <- ncol(dat)
+
+      # -----------------------------------------
+      # Safer layout
+      # -----------------------------------------
+
+      n_col <- 2
+      n_row <- 2
+
+      items_per_page <- n_col * n_row
+
+      split_items <- split(
+        seq_len(n_items),
+        ceiling(seq_len(n_items) / items_per_page)
+      )
+
+      # -----------------------------------------
+      # Loop pages
+      # -----------------------------------------
+
+      for (page in seq_along(split_items)) {
+
+        current_items <- split_items[[page]]
+
+        par(
+          mfrow = c(n_row, n_col),
+          mar = c(3, 3, 2, 1),
+          oma = c(0, 0, 2, 0),
+          cex.main = 0.9,
+          cex.axis = 0.7,
+          cex.lab = 0.8
+        )
+
+        for (i in current_items) {
+
+          try(
+
+            eRm::plotICC(
+              irt_model,
+              item.subset = i,
+              ask = FALSE
+            ),
+
+            silent = TRUE
+          )
+        }
+
+        # Force new PDF page if needed
+        if (page < length(split_items)) {
+
+          cat("\\newpage")
+
+        }
+      }
+    }
+
+  }, error = function(e) {
+
+    cat("ICC plot could not be generated.\n")
+    cat("Reason:", e$message)
+
+  })
+}
+```
+
+## Person–Item Map
+
+The Person–Item Map places respondents and items on the same latent trait continuum.
+
+Persons are represented according to their estimated latent trait levels, while items are positioned according to their estimated difficulty parameters.
+
+This visualization allows evaluation of targeting between item difficulty and respondent ability.
+
+Interpretation guidelines:
+
+- Good overlap between persons and items indicates adequate measurement coverage
+- Items concentrated in a narrow region suggest limited precision across the trait continuum
+- Large gaps between items may indicate poorly covered regions of the latent trait
+- Persons located beyond the item range may experience ceiling or floor effects
+
+Well-targeted instruments contain items distributed across the same range occupied by respondents.
+
+```{r pi}
+
+if (!is.null(irt_model)) {
+
+  tryCatch({
+
+    eRm::plotPImap(
+      irt_model,
+      sorted = TRUE
+    )
+
+  }, error = function(e) {
+
+    cat("Person-item map could not be generated.\n")
+    cat("Reason:", e$message)
+
+  })
+}
+```
+
+# Local Independence
+
+Local independence assumes that item responses are conditionally independent after controlling for the latent trait.
+
+Under this assumption, associations between items should be fully explained by the underlying construct being measured.
+
+This report evaluates local independence using:
+
+- Nonparametric Rasch residual tests (T1 and T11)
+- Mokken conditional association analysis
+- Unique Variable Analysis (UVA) for redundancy detection
+
+Interpretation guidelines:
+
+- Significant residual dependence suggests item redundancy or hidden subdimensions
+- Strong local dependence may inflate reliability estimates
+- Local dependence may distort dimensionality estimation and IRT parameter recovery
+- Redundant item clusters may indicate overlapping wording or duplicated content
+
+Evidence of local dependence should be interpreted jointly with dimensionality analyses and substantive item content review.
+
+```{r local independence}
+li_dat <- na.omit(dat)
+
+is_binary <- all(sapply(li_dat, function(x) length(unique(x)) == 2))
+
+T1 <- tryCatch(
+  eRm::NPtest(as.matrix(li_dat), n = 1000, method = "T1"),
+  error = function(e) NULL
+)
+
+T11 <- tryCatch(
+  eRm::NPtest(as.matrix(li_dat), n = 1000, method = "T11"),
+  error = function(e) NULL
+)
+
+# -----------------------------
+# PRINT RESULTS
+# -----------------------------
+
+if (is_binary) {
+
+  cat("Binary data detected.\n\n")
+
+  if (!is.null(T1)) {
+    cat("## T1 Test\n")
+    print(T1)
+    cat("\n")
+  }
+
+  if (!is.null(T11)) {
+    cat("## T11 Test\n")
+    print(T11)
+    cat("\n")
+  }
+
+  # -----------------------------
+  # INTERPRETATION (Shiny-style logic)
+  # -----------------------------
+
+  has_T1_issue <- FALSE
+  has_T11_issue <- FALSE
+
+  if (!is.null(T1) && !is.null(T1$prop)) {
+    has_T1_issue <- any(T1$prop < 0.05, na.rm = TRUE)
+  }
+
+  if (!is.null(T11) && !is.null(T11$prop)) {
+    has_T11_issue <- any(T11$prop < 0.05, na.rm = TRUE)
+  }
+
+  violation_level <- sum(has_T1_issue, has_T11_issue)
+
+  overall_state <- if (violation_level == 0) {
+    "No evidence of local dependence"
+  } else if (violation_level == 1) {
+    "Minor indications of local dependence"
+  } else {
+    "Substantial violations of local independence"
+  }
+
+  cat("\n## Interpretation\n\n")
+
+  cat("- **T1 / T11 tests** assess residual dependencies between item pairs.\n")
+  cat("- Significant results suggest violations of conditional independence.\n\n")
+
+  cat(sprintf("### Overall conclusion: %s\n\n", overall_state))
+
+  cat(
+    "### Implications:\n",
+    "- Violations may inflate reliability estimates\n",
+    "- May distort dimensionality results\n",
+    "- May indicate redundancy or hidden subdimensions\n"
+  )
+
+} else {
+
+  cat("NPtest skipped: data must be binary for T1/T11 tests.\n")
+}
+
+```
+
+## Mokken Conditional Association
+```{r ca}
+# =====================================================
+# MOKKEN CONDITIONAL ASSOCIATION (CA)
+# =====================================================
+
+li_dat <- na.omit(dat)
+
+ca <- tryCatch(
+  mokken::check.ca(li_dat, Windex = TRUE),
+  error = function(e) NULL
+)
+
+# -----------------------------------------
+# PRINT RESULTS
+# -----------------------------------------
+
+if (!is.null(ca)) {
+
+  cat("### CA Output\n\n")
+  print(ca)
+  cat("\n")
+
+  # -----------------------------------------
+  # SAFE EXTRACTION (robust across versions)
+  # -----------------------------------------
+
+  ca_df <- tryCatch(
+    as.data.frame(ca),
+    error = function(e) NULL
+  )
+
+  if (!is.null(ca_df)) {
+
+    ca_df$item <- rownames(ca_df)
+    rownames(ca_df) <- NULL
+
+    ca_df <- ca_df[, c("item", setdiff(names(ca_df), "item"))]
+
+    knitr::kable(
+      ca_df,
+      digits = 3,
+      caption = "Mokken Conditional Association Summary"
+    )
+
+  }
+
+  # -----------------------------------------
+  # INTERPRETATION METRICS
+  # -----------------------------------------
+
+  has_violation <- FALSE
+
+  if (!is.null(ca_df) && "#zsig" %in% names(ca_df)) {
+    has_violation <- any(ca_df$`#zsig` > 0, na.rm = TRUE)
+  }
+
+  n_items <- nrow(ca_df)
+}
+```
+
+```{r ca_interp, results='asis'}
+
+if (!is.null(ca_df)) {
+
+cat("## Interpretation\n\n")
+
+cat("- Conditional association evaluates local dependence after conditioning on the latent trait.\n")
+cat("- It checks whether item pairs show residual dependency beyond a unidimensional model.\n\n")
+
+cat("- Number of items evaluated:", n_items, "\n\n")
+
+if (!has_violation) {
+
+cat("### Conclusion: No meaningful conditional dependence detected.\n\n")
+cat("- Item dependencies appear adequately explained by a single latent trait.\n")
+cat("- Supports local independence assumptions in Mokken scaling.\n")
+
+} else {
+
+cat("### Conclusion: Evidence of local dependence detected.\n\n")
+cat("- Some item pairs show residual associations beyond the latent trait.\n")
+cat("- Possible redundancy or multidimensionality.\n")
+cat("- Cross-check with UVA and NPtest recommended.\n")
+
+}
+
+} else {
+
+cat("CA results could not be computed.\n")
+
+}
+```
+
+## Unique Variable Analysis
+
+```{r uva}
+# -----------------------------------------
+# UVA redundancy analysis
+# -----------------------------------------
+
+tryCatch({
+
+  uva <- EGAnet::UVA(li_dat)
+
+  print(uva)
+
+}, error = function(e) {
+
+  cat("UVA analysis failed.\n")
+  cat("Reason:", e$message)
+
+})
+```
+# General Conclusions
+
+Psychometric interpretation should integrate evidence across:
+
+- Reliability
+- Dimensionality
+- CFA fit
+- IRT fit
+- Monotonicity
+- Local independence
+
+No single statistic is sufficient to establish measurement quality. Instead, conclusions should reflect the convergence of evidence across complementary psychometric approaches.
+
+The heuristic thresholds presented in this report are intended as practical guidelines rather than strict decision rules.
