@@ -334,11 +334,11 @@ Together, these methods provide a unified framework for determining whether a se
         
         h4("Generate Report"),
         
-        p("Download a PDF report containing all psychometric analyses and interpretations."),
+        p("Download a HTML report containing all psychometric analyses and interpretations."),
         
         downloadButton(
           outputId = "download_report",
-          label = "Download PDF Report",
+          label = "Download HTML Report",
           class = "btn-primary"
         ),
         p("This might take a few minutes.")
@@ -1083,7 +1083,7 @@ server <- function(input, output, session) {
       paste0(
         "psychometric_report_",
         Sys.Date(),
-        ".pdf"
+        ".html"
       )
     },
     
@@ -1125,7 +1125,7 @@ server <- function(input, output, session) {
           # Step 3 — render report
           # -----------------------------------
           
-          incProgress(0.7, detail = "Rendering PDF...")
+          incProgress(0.7, detail = "Rendering HTML...")
           
           rmarkdown::render(
             input = tempReport,
