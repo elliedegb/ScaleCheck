@@ -7,10 +7,9 @@ params:
   data: NULL
 
 output:
-  pdf_document:
+  html_document:
     toc: true
     number_sections: true
-    latex_engine: xelatex
 
 header-includes:
   - \usepackage{fontspec}
