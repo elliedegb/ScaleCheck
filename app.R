@@ -41,7 +41,6 @@ ui <- fluidPage(
       href = "https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css"
     )
   ),
-  ,
   tags$head(
     tags$title("ScaleCheck")
   ),
@@ -57,7 +56,8 @@ ui <- fluidPage(
     ",
       
       "ScaleCheck: Psychometric Assumption Diagnostics for Reflective Measurement"
-    ),
+    )
+  ),
   tags$head(
     tags$style(HTML("
   
@@ -91,6 +91,8 @@ ui <- fluidPage(
 
   "))
   ),
+
+ 
   
   tags$hr(),
   
@@ -1100,13 +1102,14 @@ server <- function(input, output, session) {
           
           incProgress(0.2, detail = "Preparing report template...")
           
-          tempReport <- file.path(
-            tempdir(),
-            "report.Rmd"
+          tempReport <- normalizePath(
+            file.path(tempdir(), "Report.Rmd"),
+            winslash = "/",
+            mustWork = FALSE
           )
           
           file.copy(
-            "report.Rmd",
+            "Report.Rmd",
             tempReport,
             overwrite = TRUE
           )
@@ -1129,7 +1132,9 @@ server <- function(input, output, session) {
           
           rmarkdown::render(
             input = tempReport,
-            output_file = file,
+            output_format = "html_document",
+            output_file = basename(file),
+            output_dir = dirname(file),
             params = params,
             envir = new.env(parent = globalenv())
           )

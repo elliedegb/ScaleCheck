@@ -6,11 +6,13 @@ date: "`r Sys.Date()`"
 params:
   data: NULL
 
+
 output:
   html_document:
     toc: true
     number_sections: true
-
+    self_contained: true
+    
 header-includes:
   - \usepackage{fontspec}
 ---
@@ -357,7 +359,7 @@ tryCatch({
 
   pa_result <- EFA.MRFA::parallelMRFA(
     as.matrix(pa_dat),
-    Ndatsets = 200,
+    Ndatsets = 20,
     percent = 95,
     corr = corr_type,
     display = TRUE,
@@ -381,7 +383,7 @@ tryCatch({
 
     EFA.MRFA::parallelMRFA(
       as.matrix(pa_dat),
-      Ndatsets = 200,
+      Ndatsets = 20,
       percent = 95,
       corr = corr_type,
       display = FALSE,
